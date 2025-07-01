@@ -1,0 +1,72 @@
+# Ludwig Configuration for Champion-Challenger Training
+
+model_type: ecd
+
+input_features:
+  - name: feature_1
+    type: number
+    preprocessing:
+      normalization: zscore
+
+  - name: feature_2
+    type: category
+    preprocessing:
+      most_common: 10000
+
+  - name: feature_3
+    type: text
+    preprocessing:
+      tokenizer: space_punct
+      most_common: 10000
+      max_sequence_length: 256
+
+output_features:
+  - name: target
+    type: binary
+    preprocessing:
+      fallback_true_label: "1"  # 使用字符串而不是数字
+
+combiner:
+  type: concat
+  dropout: 0.1
+  fc_layers:
+    - output_size: 512
+      activation: relu
+      dropout: 0.2
+    - output_size: 256
+      activation: relu
+      dropout: 0.2
+
+trainer:
+  epochs: 100
+  batch_size: 128
+  learning_rate: 0.001
+  optimizer:
+    type: adam
+    beta1: 0.9
+    beta2: 0.999
+  early_stop: 10
+  validation_field: target
+  validation_metric: accuracy
+  
+preprocessing:
+  split:
+    type: random
+    probabilities: [0.7, 0.2, 0.1]
+    
+hyperopt:
+  goal: maximize
+  metric: accuracy
+  split: validation
+  parameters:
+    trainer.learning_rate:
+      space: loguniform
+      lower: 0.0001
+      upper: 0.01
+    trainer.batch_size:
+      space: choice
+      categories: [64, 128, 256]
+    # 移除无效的combiner参数，只优化trainer参数
+  sampler:
+    type: random
+    num_samples: 10  # 减少样本数量

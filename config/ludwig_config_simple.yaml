@@ -1,0 +1,67 @@
+# 简化的Ludwig配置 - 避免常见验证错误
+
+model_type: ecd
+
+input_features:
+  - name: feature_1
+    type: number
+    preprocessing:
+      normalization: zscore
+
+  - name: feature_2
+    type: number
+    preprocessing:
+      normalization: zscore
+
+  - name: feature_3
+    type: number
+    preprocessing:
+      normalization: zscore
+
+output_features:
+  - name: target
+    type: binary
+    # 移除可能导致验证错误的preprocessing配置
+
+combiner:
+  type: concat
+  dropout: 0.1
+  fc_layers:
+    - output_size: 256
+      activation: relu
+      dropout: 0.2
+    - output_size: 128
+      activation: relu
+      dropout: 0.1
+
+trainer:
+  epochs: 50
+  batch_size: 64
+  learning_rate: 0.001
+  optimizer:
+    type: adam
+  early_stop: 5
+  validation_field: target
+  validation_metric: accuracy
+  
+preprocessing:
+  split:
+    type: random
+    probabilities: [0.7, 0.2, 0.1]
+
+# 简化的超参数优化配置
+hyperopt:
+  goal: maximize
+  metric: accuracy
+  split: validation
+  parameters:
+    trainer.learning_rate:
+      space: loguniform
+      lower: 0.0001
+      upper: 0.01
+    trainer.batch_size:
+      space: choice
+      categories: [32, 64, 128]
+  sampler:
+    type: random
+    num_samples: 10  # 减少样本数量以加快速度

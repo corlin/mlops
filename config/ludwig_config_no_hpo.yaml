@@ -1,0 +1,53 @@
+# Ludwig配置 - 无超参数优化版本（避免HPO相关错误）
+
+model_type: ecd
+
+input_features:
+  - name: feature_1
+    type: number
+    preprocessing:
+      normalization: zscore
+
+  - name: feature_2
+    type: number
+    preprocessing:
+      normalization: zscore
+
+  - name: feature_3
+    type: number
+    preprocessing:
+      normalization: zscore
+
+output_features:
+  - name: target
+    type: binary
+
+combiner:
+  type: concat
+  dropout: 0.1
+  fc_layers:
+    - output_size: 256
+      activation: relu
+      dropout: 0.2
+    - output_size: 128
+      activation: relu
+      dropout: 0.1
+
+trainer:
+  epochs: 20  # 减少训练轮数以加快速度
+  batch_size: 64
+  learning_rate: 0.001
+  optimizer:
+    type: adam
+    beta1: 0.9
+    beta2: 0.999
+  early_stop: 5
+  validation_field: target
+  validation_metric: accuracy
+  
+preprocessing:
+  split:
+    type: random
+    probabilities: [0.7, 0.2, 0.1]
+
+# 完全移除hyperopt配置以避免相关错误

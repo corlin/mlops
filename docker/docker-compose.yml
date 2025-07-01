@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # MLflow Tracking Server
+  mlflow:
+    image: python:3.9-slim
+    container_name: mlflow-server
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow_data:/mlflow
+      - ./mlflow_requirements.txt:/requirements.txt
+      - ./start_mlflow.sh:/start_mlflow.sh
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlflow/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    command: ["/start_mlflow.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mlops-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:13
+    container_name: mlops-postgres
+    environment:
+      - POSTGRES_DB=mlops
+      - POSTGRES_USER=mlops_user
+      - POSTGRES_PASSWORD=mlops_password
+    ports:
+      - "5433:5432"  # 使用5433端口避免冲突
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlops_user -d mlops"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mlops-network
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - mlops-network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - mlops-network
+
+  # MLOps Scheduler (定期运行生命周期管理)
+  mlops-scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.scheduler
+    container_name: mlops-scheduler
+    volumes:
+      - ../:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - DATABASE_URL=postgresql://mlops_user:mlops_password@postgres:5432/mlops
+      - PROMETHEUS_GATEWAY=http://prometheus:9090
+    depends_on:
+      - mlflow
+      - postgres
+      - prometheus
+    networks:
+      - mlops-network
+
+  # Model Registry UI (可选)
+  model-registry:
+    image: python:3.9-slim
+    container_name: model-registry-ui
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../:/app
+    working_dir: /app
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    command: >
+      bash -c "
+        pip install streamlit mlflow pandas requests &&
+        streamlit run scripts/simple_model_registry_ui.py --server.port 8080 --server.address 0.0.0.0
+      "
+    depends_on:
+      - mlflow
+    networks:
+      - mlops-network
+
+volumes:
+  mlflow_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  mlops-network:
+    driver: bridge

@@ -1,0 +1,48 @@
+FROM python:3.9-slim
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    docker.io \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制requirements文件
+COPY requirements.txt .
+
+# 安装Python依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 尝试安装MLflow Ludwig集成（如果可用）
+RUN pip install --no-cache-dir mlflow[ludwig] || echo "MLflow Ludwig integration not available"
+
+# 复制应用代码
+COPY . .
+
+# 设置环境变量
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# 创建日志目录
+RUN mkdir -p /app/logs
+
+# 复制调度脚本
+COPY docker/scheduler_entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# 设置cron任务
+RUN echo "0 */6 * * * cd /app && python scripts/run_lifecycle_cycle.py >> /app/logs/scheduler.log 2>&1" > /etc/cron.d/mlops-scheduler
+RUN chmod 0644 /etc/cron.d/mlops-scheduler
+RUN crontab /etc/cron.d/mlops-scheduler
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)"
+
+# 启动命令
+CMD ["/entrypoint.sh"]
